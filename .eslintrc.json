@@ -1,0 +1,9 @@
+{
+  "extends": "./node_modules/gts/",
+  "parserOptions": {
+    "ecmaVersion": 2022
+  },
+  "rules": {
+    "quotes": ["error", "double", { "avoidEscape": true }]
+  }
+}

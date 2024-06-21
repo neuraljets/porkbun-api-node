@@ -1,0 +1,19 @@
+# Node modules
+node_modules/
+
+# Build directories
+dist/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+
+# Tester file for local development
+src/tester.ts
