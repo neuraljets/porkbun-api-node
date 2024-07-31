@@ -218,13 +218,13 @@ export class PorkbunAPI {
         "subdomain" in request
           ? `/dns/editByNameType/${request.domain}/${request.type}/${request.subdomain}`
           : `/dns/editByNameType/${request.domain}/${request.type}`;
-      return this.post<{ status: string }>(url);
+      return this.post<{ status: string }>(url, update);
     }
 
-    const url = request.id
-      ? `/dns/edit/${request.domain}/${request.id}`
-      : `/dns/edit/${request.domain}`;
-    return this.post<{ status: string }>(url, update);
+    return this.post<{ status: string }>(
+      `/dns/edit/${request.domain}/${request.id}`,
+      update
+    );
   }
   async deleteDNSRecords(
     request: DNSWriteRequest
@@ -237,10 +237,9 @@ export class PorkbunAPI {
       return this.post<{ status: string }>(url);
     }
 
-    const url = request.id
-      ? `/dns/delete/${request.domain}/${request.id}`
-      : `/dns/delete/${request.domain}`;
-    return this.post<{ status: string }>(url);
+    return this.post<{ status: string }>(
+      `/dns/delete/${request.domain}/${request.id}`
+    );
   }
 
   async retrieveDNSRecords(
