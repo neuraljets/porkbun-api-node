@@ -99,6 +99,10 @@ export interface EditDNSRecordRequest {
   prio?: string;
 }
 
+export interface UpdateNameserversRequest {
+  ns: string[];
+}
+
 export class PorkbunAPI {
   private apiKey: string;
   private secretApiKey: string;
@@ -264,6 +268,24 @@ export class PorkbunAPI {
     record: NewDNSRecord
   ): Promise<CreateDNSRecordResponse> {
     return this.post<CreateDNSRecordResponse>(`/dns/create/${domain}`, record);
+  }
+
+  async updateNameservers(
+    domain: string,
+    request: UpdateNameserversRequest
+  ): Promise<{ status: string }> {
+    return this.post<{ status: string }>(`/domain/updateNs/${domain}`, request);
+  }
+
+  async restoreDefaultNameservers(domain: string): Promise<{ status: string }> {
+    return this.updateNameservers(domain, {
+      ns: [
+        "maceio.ns.porkbun.com",
+        "curitiba.ns.porkbun.com",
+        "salvador.ns.porkbun.com",
+        "fortaleza.ns.porkbun.com",
+      ],
+    });
   }
 }
 
