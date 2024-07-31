@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from "axios";
+import axiosRetry from "axios-retry";
 
 export interface Credentials {
   apiKey: string;
@@ -113,6 +114,67 @@ export class PorkbunAPI {
         "Content-Type": "application/json",
       },
     });
+
+    // Retry failed requests
+    axiosRetry(this.axiosInstance, {
+      retries: 3,
+      validateResponse: response => {
+        // If we get a 202, consider it a failure
+        if (response.status === 202) {
+          return false;
+        }
+
+        // Otherwise, only resolve 2xx responses as successful
+        return response.status >= 200 && response.status < 300;
+      },
+      retryCondition: error => {
+        return (
+          error.code === "ECONNABORTED" ||
+          error.code === "ECONNRESET" ||
+          error.code === "ETIMEDOUT" ||
+          error.response?.status === 429 ||
+          error.response?.status === 502 || // Bad Gateway
+          error.response?.status === 503 || // Service Unavailable
+          error.response?.status === 202 // Accepted - almost always an eventual failure
+        );
+      },
+      retryDelay: (retryCount, error) => {
+        // If the error is a 202, retry in 5 minutes the first time, then an additional minute each time
+        if (error.response?.status === 202) {
+          const delay = getDelay(retryCount);
+          const numSeconds = Math.floor(delay / 1000);
+          console.log(`Received HTTP 202. Retrying in ${numSeconds} seconds.`);
+          return delay;
+        }
+
+        // If the error is not a 429 (rate limit), use exponential backoff
+        if (error.response?.status !== 429) {
+          const delay = axiosRetry.exponentialDelay(retryCount);
+          console.log(
+            `Received HTTP ${error.response?.status}. Retrying in ${Math.floor(delay / 1000)} seconds.`
+          );
+          return delay;
+        }
+
+        // If the error is a 429, attempt to use the rate limit header
+        const resetHeader = error.response?.headers["x-ratelimit-reset"];
+
+        // If header is missing, default to 60 seconds
+        if (!resetHeader) {
+          return 60 * 1000;
+        }
+
+        // Calculate the time until the rate limit resets
+        const resetTime = parseInt(resetHeader, 10); // In seconds
+        const currentTime = new Date().getTime() / 1000; // In seconds
+        const bufferSeconds = 2; // Add a buffer to ensure the rate limit has reset
+        const delaySeconds = resetTime - currentTime + bufferSeconds;
+        console.log(
+          `Rate limit exceeded. Retrying in ${delaySeconds} seconds.`
+        );
+        return delaySeconds * 1000;
+      },
+    });
   }
 
   private async post<T>(path: string, data: object = {}): Promise<T> {
@@ -121,6 +183,11 @@ export class PorkbunAPI {
       apikey: this.apiKey,
       secretapikey: this.secretApiKey,
     });
+
+    if (response.data.status !== "SUCCESS") {
+      console.error(response);
+      throw new Error(response.data.message);
+    }
     return response.data;
   }
 
@@ -199,4 +266,14 @@ export class PorkbunAPI {
   ): Promise<CreateDNSRecordResponse> {
     return this.post<CreateDNSRecordResponse>(`/dns/create/${domain}`, record);
   }
+}
+
+function getDelay(retryCount: number): number {
+  // Retry in 5 minutes the first time
+  if (retryCount === 1) {
+    return 5 * 60 * 1000;
+  }
+
+  // Retry in 1 minute for each additional retry
+  return 60 * 1000;
 }
