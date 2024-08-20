@@ -43,6 +43,20 @@ export interface AddUrlForwardRequest {
   wildcard: "yes" | "no";
 }
 
+export interface GetUrlForwardsResponse {
+  status: string;
+  forwards: UrlForward[];
+}
+
+export interface UrlForward {
+  id: string;
+  subdomain: string;
+  location: string;
+  type: string;
+  includePath: string;
+  wildcard: string;
+}
+
 export type DNSReadRequest =
   | {
       domain: string;
@@ -210,6 +224,21 @@ export class PorkbunAPI {
     return this.post<{ status: string }>(
       `/domain/addUrlForward/${domain}`,
       request
+    );
+  }
+
+  async getUrlForwards(domain: string): Promise<GetUrlForwardsResponse> {
+    return this.post<GetUrlForwardsResponse>(
+      `/domain/getUrlForwarding/${domain}`
+    );
+  }
+
+  async deleteUrlForward(
+    domain: string,
+    id: string
+  ): Promise<{ status: string }> {
+    return this.post<{ status: string }>(
+      `/domain/deleteUrlForward/${domain}/${id}`
     );
   }
 
