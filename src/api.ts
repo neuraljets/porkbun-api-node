@@ -135,7 +135,7 @@ export class PorkbunAPI {
 
     // Retry failed requests
     axiosRetry(this.axiosInstance, {
-      retries: 3,
+      retries: 10,
       validateResponse: response => {
         // If we get a 202, consider it a failure
         if (response.status === 202) {
@@ -150,7 +150,8 @@ export class PorkbunAPI {
           error.code === "ECONNABORTED" ||
           error.code === "ECONNRESET" ||
           error.code === "ETIMEDOUT" ||
-          error.response?.status === 429 ||
+          error.response?.status === 400 || // Bad Request
+          error.response?.status === 429 || // Rate limit exceeded
           error.response?.status === 502 || // Bad Gateway
           error.response?.status === 503 || // Service Unavailable
           error.response?.status === 202 // Accepted - almost always an eventual failure
