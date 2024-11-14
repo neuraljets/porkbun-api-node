@@ -1,4 +1,9 @@
-import axios, { AxiosInstance } from "axios";
+import axios, {
+  AxiosError,
+  AxiosInstance,
+  AxiosRequestConfig,
+  AxiosResponse,
+} from "axios";
 import axiosRetry from "axios-retry";
 
 export interface Credentials {
@@ -21,13 +26,18 @@ export interface Domain {
   whoisPrivacy: string;
   autoRenew: number;
   notLocal: number;
-  labels: Label[];
+  labels?: Label[];
 }
 
 export interface Label {
   id: string;
   title: string;
   color: string;
+}
+
+export interface ListDomainsRequest {
+  start?: number;
+  includeLabels?: "yes";
 }
 
 export interface ListDomainsResponse {
@@ -117,6 +127,18 @@ export interface UpdateNameserversRequest {
   ns: string[];
 }
 
+export interface IAxiosCompactError {
+  response?: Pick<AxiosResponse, "status" | "data" | "headers">;
+  request?: AxiosError["request"];
+  config?: Pick<AxiosRequestConfig, "url" | "method" | "headers">;
+}
+
+class AxiosCompactError implements IAxiosCompactError {
+  response?: Pick<AxiosResponse, "status" | "data" | "headers">;
+  request?: AxiosError["request"];
+  config?: Pick<AxiosRequestConfig, "url" | "method" | "headers" | "data">;
+}
+
 export class PorkbunAPI {
   private apiKey: string;
   private secretApiKey: string;
@@ -135,7 +157,7 @@ export class PorkbunAPI {
 
     // Retry failed requests
     axiosRetry(this.axiosInstance, {
-      retries: 10,
+      retries: 5,
       validateResponse: response => {
         // If we get a 202, consider it a failure
         if (response.status === 202) {
@@ -150,7 +172,7 @@ export class PorkbunAPI {
           error.code === "ECONNABORTED" ||
           error.code === "ECONNRESET" ||
           error.code === "ETIMEDOUT" ||
-          error.response?.status === 400 || // Bad Request
+          isBadRequestAndNotInvalidAPIKey(error) || // Bad Request, but not due to an invalid API key
           error.response?.status === 429 || // Rate limit exceeded
           error.response?.status === 502 || // Bad Gateway
           error.response?.status === 503 || // Service Unavailable
@@ -197,12 +219,17 @@ export class PorkbunAPI {
   }
 
   private async post<T>(path: string, data: object = {}): Promise<T> {
-    const response = await this.axiosInstance.post(path, {
-      ...data,
-      apikey: this.apiKey,
-      secretapikey: this.secretApiKey,
-    });
-
+    const response = await this.axiosInstance
+      .post(path, {
+        ...data,
+        apikey: this.apiKey,
+        secretapikey: this.secretApiKey,
+      })
+      .catch((error: AxiosError) => {
+        const err = this.handleAxiosError(error);
+        console.error(err);
+        throw new Error("Failed to make request to Porkbun API");
+      });
     if (response.data.status !== "SUCCESS") {
       console.error(response);
       throw new Error(response.data.message);
@@ -210,12 +237,37 @@ export class PorkbunAPI {
     return response.data;
   }
 
+  private handleAxiosError(error: AxiosError): AxiosCompactError {
+    const compactError = new AxiosCompactError();
+    if (error.response) {
+      compactError.response = {
+        status: error.response.status,
+        data: error.response.data,
+        headers: error.response.headers,
+      };
+    } else if (error.request) {
+      compactError.request = error.request;
+    }
+
+    if (error.config) {
+      compactError.config = {
+        url: error.config.url,
+        method: error.config.method,
+        headers: error.config.headers,
+        data: error.config.data,
+      };
+    }
+    return compactError;
+  }
+
   async ping(): Promise<PingResponse> {
     return this.post<PingResponse>("/ping");
   }
 
-  async listDomains(): Promise<ListDomainsResponse> {
-    return this.post<ListDomainsResponse>("/domain/listAll");
+  async listDomains(
+    request: ListDomainsRequest = {}
+  ): Promise<ListDomainsResponse> {
+    return this.post<ListDomainsResponse>("/domain/listAll", request);
   }
 
   async addUrlForward(
@@ -300,6 +352,14 @@ export class PorkbunAPI {
     return this.post<CreateDNSRecordResponse>(`/dns/create/${domain}`, record);
   }
 
+  async getNameservers(
+    domain: string
+  ): Promise<{ status: string; ns: string[] }> {
+    return this.post<{ status: string; ns: string[] }>(
+      `/domain/getNs/${domain}`
+    );
+  }
+
   async updateNameservers(
     domain: string,
     request: UpdateNameserversRequest
@@ -317,6 +377,20 @@ export class PorkbunAPI {
       ],
     });
   }
+}
+
+function isBadRequestAndNotInvalidAPIKey(error: AxiosError<any, any>): boolean {
+  if (error.response?.status !== 400) {
+    return false;
+  }
+
+  const errorMessage = error.response?.data?.message;
+
+  if (typeof errorMessage !== "string") {
+    return true;
+  }
+
+  return !errorMessage.includes("Invalid API key");
 }
 
 function getDelay(retryCount: number): number {
