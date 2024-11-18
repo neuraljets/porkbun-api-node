@@ -5,6 +5,7 @@ import axios, {
   AxiosResponse,
 } from "axios";
 import axiosRetry from "axios-retry";
+import Bottleneck from "bottleneck";
 
 export interface Credentials {
   apiKey: string;
@@ -139,6 +140,12 @@ class AxiosCompactError implements IAxiosCompactError {
   config?: Pick<AxiosRequestConfig, "url" | "method" | "headers" | "data">;
 }
 
+const limiter = new Bottleneck({
+  // Porkbun starts getting uppity when you hit 350 requests in a 5 minute period
+  // So we'll limit to 325 requests in a 5 minute period
+  minTime: (5 * 60 * 1000) / 325,
+});
+
 export class PorkbunAPI {
   private apiKey: string;
   private secretApiKey: string;
@@ -157,7 +164,7 @@ export class PorkbunAPI {
 
     // Retry failed requests
     axiosRetry(this.axiosInstance, {
-      retries: 5,
+      retries: 10,
       validateResponse: response => {
         // If we get a 202, consider it a failure
         if (response.status === 202) {
@@ -172,7 +179,8 @@ export class PorkbunAPI {
           error.code === "ECONNABORTED" ||
           error.code === "ECONNRESET" ||
           error.code === "ETIMEDOUT" ||
-          isBadRequestAndNotInvalidAPIKey(error) || // Bad Request, but not due to an invalid API key
+          error.response?.status === 405 || // Method Not Allowed (probably means we're getting a CAPTCHA)
+          isBadRequestAndNotInvalidAPIKeyOrDomainNotOptedIn(error) || // Bad Request, but not due to an invalid API key
           error.response?.status === 429 || // Rate limit exceeded
           error.response?.status === 502 || // Bad Gateway
           error.response?.status === 503 || // Service Unavailable
@@ -218,7 +226,7 @@ export class PorkbunAPI {
     });
   }
 
-  private async post<T>(path: string, data: object = {}): Promise<T> {
+  private async _post<T>(path: string, data: object = {}): Promise<T> {
     const response = await this.axiosInstance
       .post(path, {
         ...data,
@@ -226,9 +234,7 @@ export class PorkbunAPI {
         secretapikey: this.secretApiKey,
       })
       .catch((error: AxiosError) => {
-        const err = this.handleAxiosError(error);
-        console.error(err);
-        throw new Error("Failed to make request to Porkbun API");
+        throw this.handleAxiosError(error);
       });
     if (response.data.status !== "SUCCESS") {
       console.error(response);
@@ -236,6 +242,10 @@ export class PorkbunAPI {
     }
     return response.data;
   }
+
+  private post = limiter.wrap(
+    this._post.bind(this) as any
+  ) as typeof this._post;
 
   private handleAxiosError(error: AxiosError): AxiosCompactError {
     const compactError = new AxiosCompactError();
@@ -379,7 +389,9 @@ export class PorkbunAPI {
   }
 }
 
-function isBadRequestAndNotInvalidAPIKey(error: AxiosError<any, any>): boolean {
+function isBadRequestAndNotInvalidAPIKeyOrDomainNotOptedIn(
+  error: AxiosError<any, any>
+): boolean {
   if (error.response?.status !== 400) {
     return false;
   }
@@ -390,7 +402,10 @@ function isBadRequestAndNotInvalidAPIKey(error: AxiosError<any, any>): boolean {
     return true;
   }
 
-  return !errorMessage.includes("Invalid API key");
+  return (
+    !errorMessage.includes("Invalid API key") &&
+    !errorMessage.includes("Domain is not opted in to API")
+  );
 }
 
 function getDelay(retryCount: number): number {
