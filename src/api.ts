@@ -156,7 +156,7 @@ export class PorkbunAPI {
     this.secretApiKey = credentials.secretApiKey;
 
     this.axiosInstance = axios.create({
-      baseURL: "https://porkbun.com/api/json/v3",
+      baseURL: "https://api.porkbun.com/api/json/v3",
       headers: {
         "Content-Type": "application/json",
       },
