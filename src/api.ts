@@ -148,12 +148,16 @@ const limiter = new Bottleneck({
   minTime: (5 * 60 * 1000) / 325,
 });
 
+export interface Options {
+  numRetries?: number;
+}
+
 export class PorkbunAPI {
   private apiKey: string;
   private secretApiKey: string;
   private axiosInstance: AxiosInstance;
 
-  constructor(credentials: Credentials) {
+  constructor(credentials: Credentials, options: Options = {}) {
     this.apiKey = credentials.apiKey;
     this.secretApiKey = credentials.secretApiKey;
 
@@ -166,7 +170,7 @@ export class PorkbunAPI {
 
     // Retry failed requests
     axiosRetry(this.axiosInstance, {
-      retries: 10,
+      retries: options.numRetries ?? 10,
       validateResponse: response => {
         // If we get a 202, consider it a failure
         if (response.status === 202) {
