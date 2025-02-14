@@ -119,6 +119,8 @@ export interface CreateDNSRecordResponse {
 }
 
 export interface EditDNSRecordRequest {
+  name?: string;
+  type: string;
   content: string;
   ttl?: string;
   prio?: string;
