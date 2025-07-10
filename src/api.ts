@@ -368,6 +368,61 @@ export class PorkbunAPI {
     return this.post<CreateDNSRecordResponse>(`/dns/create/${domain}`, record);
   }
 
+  async createOrUpdateDNSRecord(
+    domain: string,
+    record: NewDNSRecord & { name?: string }
+  ): Promise<CreateDNSRecordResponse | { status: string }> {
+    // Build the lookup request by name/type or just type
+    const lookupRequest = record.name
+      ? { domain, type: record.type, subdomain: record.name }
+      : { domain, type: record.type };
+
+    // See if any existing records match
+    const existing = await this.retrieveDNSRecords(lookupRequest);
+
+    console.log(
+      `Found ${existing.records.length} existing records for ${record.name || domain} with type ${record.type}.`
+    );
+    console.log({ existingRecords: existing.records, record });
+
+    if (existing.records.length > 0) {
+      // If there's already a record with the same name, type, and content,
+      // we can skip the update
+      const exactMatch = existing.records.some(
+        r =>
+          r.content === record.content &&
+          r.type === record.type &&
+          r.name === [record.name, domain].filter(Boolean).join(".") &&
+          (record.ttl === undefined || r.ttl === record.ttl) &&
+          (record.prio === undefined || r.prio === record.prio)
+      );
+
+      if (exactMatch) {
+        console.log(
+          `Record already exists for ${record.name || domain} with type ${record.type} and content ${record.content}. Skipping update.`
+        );
+        return { status: "Record already exists" };
+      }
+
+      // Prepare update payload
+      const updatePayload: EditDNSRecordRequest = {
+        type: record.type,
+        content: record.content,
+        ...(record.ttl !== undefined && { ttl: record.ttl }),
+        ...(record.prio !== undefined && { prio: record.prio }),
+        // name is only needed for name‐based edits
+        ...(record.name && { name: record.name }),
+      };
+
+      // Build the write request (same shape as lookupRequest)
+      const writeRequest = lookupRequest as DNSWriteRequest;
+      return this.editDNSRecords(writeRequest, updatePayload);
+    } else {
+      // No existing record, create a new one
+      return this.createDNSRecord(domain, record);
+    }
+  }
+
   async getNameservers(
     domain: string
   ): Promise<{ status: string; ns: string[] }> {
