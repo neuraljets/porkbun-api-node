@@ -70,25 +70,25 @@ export interface UrlForward {
 
 export type DNSReadRequest =
   | {
-      domain: string;
-      id?: string;
-    }
+    domain: string;
+    id?: string;
+  }
   | {
-      domain: string;
-      type: string;
-      subdomain?: string;
-    };
+    domain: string;
+    type: string;
+    subdomain?: string;
+  };
 
 export type DNSWriteRequest =
   | {
-      domain: string;
-      id: string;
-    }
+    domain: string;
+    id: string;
+  }
   | {
-      domain: string;
-      type: string;
-      subdomain?: string;
-    };
+    domain: string;
+    type: string;
+    subdomain?: string;
+  };
 
 export interface DNSRecord {
   id: string;
@@ -190,6 +190,7 @@ export class PorkbunAPI {
           error.response?.status === 429 || // Rate limit exceeded
           error.response?.status === 502 || // Bad Gateway
           error.response?.status === 503 || // Service Unavailable
+          error.response?.status === 504 || // Gateway Timeout
           error.response?.status === 202 // Accepted - almost always an eventual failure
         );
       },
